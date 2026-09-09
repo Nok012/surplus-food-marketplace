@@ -96,3 +96,41 @@ order 1 line ที่มี quantity 3 จึงคืนแค่ 1 หน่�
 ```
 
 order line มี 3 ชิ้น ก็คืน 3 ชิ้น เท่ากับที่ตัดออกไปตอนใส่ตะกร้า stock จึงกลับเป็น 5
+
+### BE-4 — Logical inventory bug on cart quantity increase
+
+**อาการ**
+
+`meal_2` ใส่ตะกร้า 1 ชิ้น แล้วกดเพิ่มเป็น 3 stock ขึ้นเป็น 6 ที่ถูกคือ 2
+
+| ขั้นตอน | stock ที่ควรเป็น | ที่เกิดขึ้นจริง |
+|---|---|---|
+| หลัง reset | 5 | 5 |
+| ใส่ตะกร้า 1 | 4 | 4 |
+| เพิ่มเป็น 3 | 2 | **6** |
+
+**สาเหตุ**
+
+`CartService.update_item` ใน `BE/app/services/cart.py` ตอนเพิ่มจำนวน สั่งบวก stock แทนที่จะตัด:
+
+```python
+if delta > 0:                                 # ลูกค้าเพิ่มจำนวน
+    self.stock.apply(
+        meal_id=meal_id,
+        quantity=delta,
+        event_type=StockEventType.INCREMENT,  # ← บวกของคืนเข้า stock
+        note="reserve on cart increase",
+```
+
+เพิ่มจำนวนในตะกร้าคือจองของเพิ่ม stock ต้องลด แต่โค้ดบวกคืน ตัวเลขเลยวิ่งผิดทาง จาก 4 ควรลงไป 2 กลับขึ้นไป 6
+
+**สิ่งที่แก้**
+
+เปลี่ยน event type ตอนเพิ่มจำนวน ให้ตัด stock ตามที่ `note` ของมันเขียนไว้ว่า reserve:
+
+```diff
+- event_type=StockEventType.INCREMENT
++ event_type=StockEventType.DECREMENT
+```
+
+เพิ่มในตะกร้า 2 ชิ้น ก็ตัด stock 2 ชิ้น เหลือ 2 ส่วนตอนลดจำนวนกับ `clear()` ยังใช้ `INCREMENT` เหมือนเดิม เพราะสองอันนั้นคืนของจริง
