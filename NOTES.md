@@ -134,3 +134,37 @@ if delta > 0:                                 # ลูกค้าเพิ่�
 ```
 
 เพิ่มในตะกร้า 2 ชิ้น ก็ตัด stock 2 ชิ้น เหลือ 2 ส่วนตอนลดจำนวนกับ `clear()` ยังใช้ `INCREMENT` เหมือนเดิม เพราะสองอันนั้นคืนของจริง
+
+
+## Frontend
+
+### FE-1 — Wrong “You pay” price
+
+**อาการ**
+
+หน้า meal list โชว์ราคาขีดฆ่ากับราคาที่ต้องจ่ายเป็นเลขเดียวกัน ทั้งที่ `meal_1` ลดจาก ฿180 เหลือ ฿79
+
+| | ที่ควรโชว์ | ที่โชว์จริง |
+|---|---|---|
+| ราคาขีดฆ่า | ฿180 | ฿180 |
+| You pay | ฿79 | **฿180** |
+
+**สาเหตุ**
+
+`MealsPage` ใน `FE/src/pages/MealsPage.tsx` ส่ง `original_price` เข้าไปทั้งสองช่อง:
+
+```tsx
+<span className="strike">{formatBaht(meal.original_price)}</span>
+<strong className="pay">{formatBaht(meal.original_price)}</strong>   {/* ← ควรเป็นราคาลด */}
+```
+
+ช่อง `.strike` ใช้ราคาก่อนลดถูกแล้ว แต่ช่อง `.pay` copy มาจากบรรทัดบน เลยได้ราคาก่อนลดตามไปด้วย
+
+**สิ่งที่แก้**
+
+```diff
+- <strong className="pay">{formatBaht(meal.original_price)}</strong>
++ <strong className="pay">{formatBaht(meal.discounted_price)}</strong>
+```
+
+API ส่ง `discounted_price` มาให้อยู่แล้ว แก้แค่ฝั่ง frontend ไม่ต้องแตะ backend
