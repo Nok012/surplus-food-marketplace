@@ -64,11 +64,6 @@ class OrderService:
                 )
             )
 
-        # Attach store metadata for receipt / downstream notifications.
-        first_line = lines[0].model_dump()
-        meal = self.db.meals[first_line["mealId"]]
-        _ = meal.store_id
-
         now = _now()
         order = Order(
             id=self.db.new_id("ord"),
