@@ -35,7 +35,7 @@ class CartService:
 
         for meal_id, quantity in raw.items():
             meal = self.meals.get_meal(meal_id)
-            unit_price = meal.original_price
+            unit_price = meal.discounted_price
             line_total = unit_price * quantity
             subtotal += line_total
             items.append(
