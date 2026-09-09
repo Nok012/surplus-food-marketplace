@@ -63,7 +63,7 @@ export default function MealsPage() {
             </div>
             <div className="meal-price">
               <span className="strike">{formatBaht(meal.original_price)}</span>
-              <strong className="pay">{formatBaht(meal.original_price)}</strong>
+              <strong className="pay">{formatBaht(meal.discounted_price)}</strong>
               <button
                 type="button"
                 className="btn primary"
