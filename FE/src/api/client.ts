@@ -115,7 +115,7 @@ export const api = {
     request<Order>(`/orders/${order_id}/complete`, { method: "POST" }),
 
   listStockEvents: (meal_id?: string) => {
-    const q = meal_id ? `?meal=${encodeURIComponent(meal_id)}` : "";
+    const q = meal_id ? `?meal_id=${encodeURIComponent(meal_id)}` : "";
     return request<StockEvent[]>(`/stock-events${q}`);
   },
 

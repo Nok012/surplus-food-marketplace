@@ -6,7 +6,7 @@
 
 **อาการ**
 
-`POST /v1/th/orders` ที่มีสินค้าอยู่ในตะกร้า คืน 500 ทุกครั้ง traceback ชี้ที่:
+`POST /v1/th/orders` ทั้งที่มีของในตะกร้า คืน 500 ทุกครั้ง traceback ชี้ที่:
 
 ```
 File "BE/app/services/order.py", line 69, in create_from_cart
@@ -16,31 +16,40 @@ KeyError: 'mealId'
 
 **สาเหตุ**
 
-`OrderLine` ใน `BE/app/models/schemas.py` ประกาศ field เป็น snake_case และไม่ได้ตั้ง `alias_generator` ไว้:
+`OrderService.create_from_cart` ใน `BE/app/services/order.py` อ่าน key เป็น camelCase:
 
 ```python
-class OrderLine(BaseModel):
-    meal_id: str      # ← ชื่อ field จริง
-    meal_name: str
-    ...
+first_line = lines[0].model_dump()
+meal = self.db.meals[first_line["mealId"]]   # ← key ที่ไม่มีอยู่จริง
+_ = meal.store_id
 ```
 
-`model_dump()` จึงคืน dict ที่ key ชื่อ `meal_id` การอ่าน `first_line["mealId"]` เลยไม่เจอ key แล้วโยน `KeyError` ทุกรอบที่ checkout
+`OrderLine` ใน `BE/app/models/schemas.py` ประกาศ field เป็น snake_case และไม่ได้ตั้ง `alias_generator` `model_dump()` จึงคืน key ชื่อ `meal_id` การอ่าน `first_line["mealId"]` เลยไม่เจอ แล้วโยน `KeyError` ทุกรอบที่ checkout
 
 **สิ่งที่แก้**
 
-ลบทั้ง block ออก (3 บรรทัด + comment กำกับ) แทนที่จะแก้ key ให้ถูก เพราะตรวจแล้วว่าเป็น dead code:
+ลบทั้ง block ทิ้ง แทนที่จะแก้ชื่อ key เพราะเป็น dead code — `meal` ที่หยิบมาถูกโยนทิ้งใส่ `_` ไม่มีใครใช้ต่อ:
+
+```diff
+- # Attach store metadata for receipt / downstream notifications.
+- first_line = lines[0].model_dump()
+- meal = self.db.meals[first_line["mealId"]]
+- _ = meal.store_id
+-
+```
+
+comment บอกว่าจะแนบ store metadata แต่โค้ดไม่เคยแนบอะไรเลย ลบแล้ว order สร้างผ่านปกติ
 
 ### BE-2 — Logical pricing bug
 
 **อาการ**
 
-ใส่ `meal_1` จำนวน 2 แล้วได้ subtotal 360 ที่ถูกคือ 158
+ใส่ `meal_1` (฿180 ลดเหลือ ฿79) จำนวน 2 ได้ subtotal 360 ที่ถูกคือ 158
 
-| | ราคา/ชิ้น | × 2 |
+| | ที่ควรคิด | ที่คิดจริง |
 |---|---|---|
-| ที่ระบบคิด | `original_price` ฿180 | ฿360 |
-| ที่ควรคิด | `discounted_price` ฿79 | ฿158 |
+| ราคา/ชิ้น | `discounted_price` ฿79 | `original_price` ฿180 |
+| × 2 | ฿158 | **฿360** |
 
 **สาเหตุ**
 
@@ -52,13 +61,16 @@ line_total = unit_price * quantity
 subtotal += line_total
 ```
 
+ราคาที่ลูกค้าต้องจ่ายคือ `discounted_price` แต่โค้ดใช้ป้ายราคาเดิม ยอดเลยบานตามส่วนลดที่หายไป
+
 **สิ่งที่แก้**
 
-```python
-unit_price = meal.discounted_price
+```diff
+- unit_price = meal.original_price
++ unit_price = meal.discounted_price
 ```
 
-แก้บรรทัดเดียวจบ เพราะ `line_total` กับ `subtotal` คิดต่อจาก `unit_price` อยู่แล้ว ส่วน `OrderService.create_from_cart` ก็ copy ทั้งสามค่ามาจาก cart ตรงๆ ไม่ได้คิดราคาเอง — ราคาฝั่ง order จึงถูกตามไปเอง
+แก้บรรทัดเดียวจบ เพราะ `line_total` กับ `subtotal` คิดต่อจาก `unit_price` อยู่แล้ว ส่วน `OrderService.create_from_cart` copy ทั้งสามค่ามาจาก cart ตรงๆ ไม่ได้คิดราคาเอง ราคาฝั่ง order จึงถูกตามไปเอง
 
 ### BE-3 — Logical inventory bug on cancel
 
@@ -168,3 +180,35 @@ if delta > 0:                                 # ลูกค้าเพิ่�
 ```
 
 API ส่ง `discounted_price` มาให้อยู่แล้ว แก้แค่ฝั่ง frontend ไม่ต้องแตะ backend
+
+### FE-2 — Stock events filter
+
+**อาการ**
+
+หน้า Stock events กรอกช่อง meal id เป็น `meal_1` แล้วกดค้นหา ยังได้ event ของทุก meal เหมือนเดิม ตัวกรองไม่ทำงาน
+
+**สาเหตุ**
+
+`api.listStockEvents` ใน `FE/src/api/client.ts` ส่ง query param ชื่อ `meal`:
+
+```ts
+const q = meal_id ? `?meal=${encodeURIComponent(meal_id)}` : "";
+```
+
+แต่ endpoint รับชื่อ `meal_id`:
+
+```python
+def list_stock_events(
+    meal_id: Optional[str] = None,
+```
+
+ชื่อไม่ตรงกัน FastAPI เลยมองว่าไม่ได้ส่งตัวกรองมา `meal_id` เป็น `None` แล้วคืน event ทั้งหมด ไม่ error เพราะ param ตัวนี้ optional และ query param แปลกปลอมจะถูกเมิน
+
+**สิ่งที่แก้**
+
+```diff
+- const q = meal_id ? `?meal=${encodeURIComponent(meal_id)}` : "";
++ const q = meal_id ? `?meal_id=${encodeURIComponent(meal_id)}` : "";
+```
+
+เปลี่ยนชื่อ param ฝั่ง frontend ให้ตรงกับ backend ไม่แก้ฝั่ง backend เพราะ `meal_id` ตรงกับชื่อ field ที่ใช้ทั้งโปรเจกต์อยู่แล้ว
