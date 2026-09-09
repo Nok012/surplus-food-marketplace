@@ -98,7 +98,7 @@ class OrderService:
         for line in order.lines:
             self.stock.apply(
                 meal_id=line.meal_id,
-                quantity=1,
+                quantity=line.quantity,
                 event_type=StockEventType.INCREMENT,
                 event_source=StockEventSource.SYSTEM,
                 reference_id=order.id,
